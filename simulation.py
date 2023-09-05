@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+from pricing import Black
 
 np.random.seed(0)
 plt.rcParams['figure.figsize'] = (16, 4.5)
@@ -211,14 +212,14 @@ for i, (t, f) in enumerate(simulation(spot_rates, mc_tenors, mc_drift, mc_vols, 
 #Plot the projected rates
 proj_rates = np.matrix(proj_rates)
 plt.plot(proj_timeline.transpose(), proj_rates)
-plt.xlabel(r'Time $t$')
-plt.ylabel(r'Rate $f(t,\tau)$');
+plt.xlabel(r'Time')
+plt.ylabel(r'Rate');
 plt.title(r'Simulated $f(t,\tau)$ by $t$')
 plt.show()
 
 plt.plot(mc_tenors, proj_rates.transpose())
-plt.xlabel(r'Tenor $\tau$')
-plt.ylabel(r'Rate $f(t,\tau)$');
+plt.xlabel(r'Tenor')
+plt.ylabel(r'Rate ');
 plt.title(r'Simulated $f(t,\tau)$ by $\tau$')
 plt.show();
 
@@ -237,33 +238,39 @@ class Integrator:
 
 
 t_exp, t_mat = 1., 2.
-K, notional = .03, 1e6
+K = .03
 n_simulations, n_timesteps = 500, 50
 
-proj_timeline = np.linspace(0, t_mat, n_timesteps)
-simulated_forecast_rates = []
-simulated_df = []
-simulated_pvs = []
-pv_convergence_process = []
-for i in range(0, n_simulations):
-    rate_forecast = None
-    rate_discount = Integrator(0, t_exp)  #Compounded discount
-    for t, curve_fwd in simulation(spot_rates, mc_tenors, mc_drift, mc_vols, proj_timeline):
-        f_t_0 = np.interp(0., mc_tenors, curve_fwd)  # rate $f_t^0$
-        rate_discount.add(f_t_0)
-        #t reaches expiration
-        if t >= t_exp and rate_forecast is None:
-            Tau = t_mat - t_exp
-            rate_forecast = Integrator(0, Tau)  # integrate all inst.fwd.rates from 0 till 1Y tenor to get 1Y spot rate
-            for s in np.linspace(0, Tau, 15):  # $\int_0^T f(t,s)ds$
-                f_texp_s = np.interp(s, mc_tenors, curve_fwd)
-                rate_forecast.add(f_texp_s)
-            rate_forecast = rate_forecast.get_integral()
 
-    df = np.exp(-rate_discount.get_integral())  # Discount factor
-    simulated_forecast_rates.append(rate_forecast)
-    simulated_df.append(df)
-    pv = max(0, rate_forecast - K) * (t_mat - t_exp) * notional * df #Payoff * discounted notional
-    simulated_pvs.append(pv)
-    pv_convergence_process.append(np.average(simulated_pvs))
+def mc_simulation(t_exp, t_mat, K, n_simulations, n_timesteps, vol, isCall):
+    proj_timeline = np.linspace(0, t_mat, n_timesteps)
+    simulated_forecast_rates = []
+    simulated_df = []
+    simulated_values = []
+    for i in range(0, n_simulations):
+        rate_forecast = None
+        rate_discount = Integrator(0, t_exp)  #Compounded discount
+        for t, curve_fwd in simulation(spot_rates, mc_tenors, mc_drift, mc_vols, proj_timeline):
+            f_t_0 = np.interp(0., mc_tenors, curve_fwd)  # rate $f_t^0$
+            rate_discount.add(f_t_0)
+            #t reaches expiration
+            if t >= t_exp and rate_forecast is None:
+                Tau = t_mat - t_exp
+                rate_forecast = Integrator(0, Tau)  # integrate all inst.fwd.rates from 0 till 1Y tenor to get 1Y spot rate
+                for s in np.linspace(0, Tau, 15):  # $\int_0^T f(t,s)ds$
+                    f_texp_s = np.interp(s, mc_tenors, curve_fwd)
+                    rate_forecast.add(f_texp_s)
+                rate_forecast = rate_forecast.get_integral()
+
+        df = np.exp(-rate_discount.get_integral())  # Discount factor
+        simulated_forecast_rates.append(rate_forecast)
+        simulated_df.append(df)
+
+        cap_value = Black.price_cap(rate_forecast, K, 90, vol, 0.02, 90, isCall)
+        simulated_values.append(cap_value)
+
+        return simulated_forecast_rates, simulated_df, simulated_values
+
+
+
 
